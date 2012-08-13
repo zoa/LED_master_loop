@@ -13,8 +13,10 @@
 #define clockPin 3   // Green wire on Adafruit Pixels
 #define stripLen 40
 
-volatile unsigned long int interrupt_counter; // how many ms have elapsed since the interrupt timer was last reset
+const byte update_frequency = 30; // how often to update the LEDs
+volatile unsigned long int interrupt_counter; // updates every time the interrupt timer overflows
 unsigned long int prev_interrupt_counter; // the main loop uses this to detect when the interrupt counter has changed 
+
 unsigned int switch_after; // swap routines after this many milliseconds
 unsigned int active_routine; // matches the #s from the switch statement in the main loop
 void (*update)(); // pointer to current led-updating function within this sketch
@@ -29,6 +31,8 @@ Zoa_WS2801 strip = Zoa_WS2801(stripLen, dataPin, clockPin, WS2801_GRB);
 // Pointers to some waveform objects - currently they're reallocated each time the routine changes
 #define WAVES 6
 Waveform_generator* waves[WAVES]={};
+
+const Audio_monitor& audio = Audio_monitor::instance();
 
 boolean transitioning = false;
 
@@ -50,7 +54,7 @@ void setup()
   
   // update the interrupt counter (and thus the LEDs) every 30ms. The strip updating takes ~0.1ms 
   // for each LED in the strip, and we are assuming a maximum strip length of 240, plus some extra wiggle room.
-  MsTimer2::set( 30, &update_interrupt_counter );
+  MsTimer2::set( update_frequency, &update_interrupt_counter );
   MsTimer2::start();
 }
 
@@ -144,6 +148,7 @@ void loop()
   if ( interrupt_counter != prev_interrupt_counter )
   {
     prev_interrupt_counter = interrupt_counter;
+    update_audio();
     update();
   }
 }
@@ -218,6 +223,7 @@ void linear_transition( const rgbInfo& start_value, const rgbInfo& target_value,
 void update_interrupt_counter()
 {
   interrupt_counter += MsTimer2::msecs;
+  audio.update_amplitude();
 }
 
 // Used for transitions between routines (hypothetically)
@@ -244,6 +250,20 @@ void deallocate_waveforms()
     {
       delete waves[i];
       waves[i] = NULL;
+    }
+  }
+}
+
+
+void update_audio()
+{
+  float level = audio.get_amplitude_float();
+  Serial.println(level);
+  for ( byte i = 0; i < WAVES; ++i )
+  {
+    if ( waves[i] != NULL )
+    {
+      waves[i]->set_audio_level( level );
     }
   }
 }
