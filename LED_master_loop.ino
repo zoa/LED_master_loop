@@ -11,7 +11,7 @@
 
 #define dataPin 2  // Yellow wire on Adafruit Pixels
 #define clockPin 3   // Green wire on Adafruit Pixels
-#define stripLen 200
+#define stripLen 40
 
 volatile unsigned long int interrupt_counter; // how many ms have elapsed since the interrupt timer was last reset
 unsigned long int prev_interrupt_counter; // the main loop uses this to detect when the interrupt counter has changed 
@@ -41,13 +41,12 @@ void setup()
   strip.begin();
   strip.setAll(rgbInfo_t(0,0,0));
   
-  library_update = &Zoa_WS2801::pushFront;
-  
-  switch_after = 3000;
+  switch_after = 5000;
   interrupt_counter = switch_after + 1;
   prev_interrupt_counter = interrupt_counter;
   active_routine = 0;
   update = NULL;
+  library_update = NULL;
   
   // update the interrupt counter (and thus the LEDs) every 30ms. The strip updating takes ~0.1ms 
   // for each LED in the strip, and we are assuming a maximum strip length of 240, plus some extra wiggle room.
@@ -89,7 +88,7 @@ void loop()
         case 0:
           // green and blue waves going in and out of phase
           update = update_simple;
-          waves[0] = new Sine_generator( 0, 15, 1, 0 );
+          waves[0] = new Sine_generator( 0, 15, 1, PI/2 );
            // all the /3s are a quick way to get the speed looking right while maintaining prime number ratios
           waves[1] = new Sine_generator( 20, 255, 11/3, 0 );
           waves[2] = new Sine_generator( 20, 255, 17/3, 0 );
@@ -97,7 +96,7 @@ void loop()
         case 1:
           // green and purple waves, same frequency but out of phase
           update = update_simple;
-          waves[0] = new Sine_generator( 0, 5, 5/3, PI/2 );
+          waves[0] = new Sine_generator( 0, 5, 5/3, 0 );
           waves[1] = new Sine_generator( 0, 200, 5/3, 0 );
           waves[2] = new Sine_generator( 0, 255, 5/3, PI/2 );  
           break;
@@ -196,7 +195,7 @@ void linear_transition()
 void linear_transition( const rgbInfo& start_value, const rgbInfo& target_value, uint16_t ms )
 {
   float stop_cnt = interrupt_counter + ms;
-  while ( interrupt_counter <= stop_cnt )
+  while ( interrupt_counter < stop_cnt )
   {
     while ( interrupt_counter == prev_interrupt_counter ) {}
     prev_interrupt_counter = interrupt_counter;
@@ -222,8 +221,16 @@ void update_interrupt_counter()
 }
 
 // Used for transitions between routines (hypothetically)
-float transitional_value( const float& from, const float& to, const float& multiplier )
+float transitional_value( const float& from, const float& to, float multiplier )
 {
+  if ( multiplier < 0 )
+  {
+    multiplier = 0;
+  }
+  else if ( multiplier > 1 )
+  {
+    multiplier = 1;
+  }
   float val = from * (1-multiplier) + to * multiplier;
   return val;
 }
