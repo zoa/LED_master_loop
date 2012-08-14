@@ -123,14 +123,6 @@ void loop()
           waves[1] = new Sine_generator( 0, 200, 5/3, 0 );
           waves[2] = new Sine_generator( 0, 255, 5/3, PI/2 );  
           break;
-          /*
-        case 2:
-          // similar to 0 but with a bit more blue and some red
-          update = update_simple;
-          waves[0] = new Sine_generator( 0, 15, 1, 0 ); // red appears way brighter than G/B so using tiny #s is good
-          waves[1] = new Sine_generator( 0, 200, 13/3, 0 );
-          waves[2] = new Sine_generator( 0, 255, 7/3, 0 );
-          break;*/
         case 2:
           // two waves multiplied together
           update = update_convolved; 
@@ -144,19 +136,17 @@ void loop()
         case 3:
           // mostly light blue/turquoise/purple with occasional bright green
           update = update_simple;
-          waves[0] = new Linear_generator( Linear_generator::TRIANGLE, 0, 30, 1, 75 );
-          waves[1] = new Sine_generator( 30, 100, 1, 0 );
-          waves[2] = new Linear_generator( Linear_generator::TRIANGLE, 0, 100, 1, 128 );
+          waves[0] = new Linear_generator( Linear_generator::SAWTOOTH, 0, 30, 1, 75 );
+          waves[1] = new Sine_generator( 0, 50, 1, 0 );
+          waves[2] = new Linear_generator( Linear_generator::TRIANGLE, 0, 255, 1, 128 );
           break;
-          /*
         case 4:
-          // sets whole strip at once to blink between 2 different morphing purple-blues
-          // blinking is bad
-          update = update_all;
-          waves[0] = new Sine_generator( 0, 100, 2, 0 );
-          waves[1] = new Square_generator( 100, 200, 1, 100, 100, 1 );
-          waves[2] = new Square_generator( 100, 255, 1, 100, 100, 1 );
-          */
+          // purple-blue with bright blue twinkles
+          update = update_simple;
+          waves[0] = new Sine_generator( 0, 8, 7/3, PI/2 );
+          waves[1] = new Sine_generator( 0, 10, 7/3, 0 );
+          waves[2] = new White_noise_generator( 230, 255, 1, 30, 20 );
+          break;
       }
       active_routine = i;
       interrupt_counter = 0;
@@ -196,6 +186,7 @@ void update_convolved()
   }
 }
 
+// rapidly go black from top to bottom, then pause, then come back out at a reduced speed
 void hide_in_ground()
 {
   for ( int i = stripLen - 1; i >= 0; --i )
@@ -205,19 +196,23 @@ void hide_in_ground()
     delay(5); // if we use the interrupt timer for this it'll be too slow
   }
   delay(2000);
+  
+  // it'll always do the same thing when it first comes back [for now]
   deallocate_waveforms();
   allocate_simple_sines();
   library_update = &Zoa_WS2801::pushBack;
-  MsTimer2::msecs = MsTimer2::msecs * hiding_slowdown_factor;
+  
+  // come slowly back up
+  MsTimer2::msecs *= hiding_slowdown_factor;
   linear_transition();
-  for ( int i = 0; i < stripLen; ++i )
+  for ( int i = 0; i < stripLen*2; ++i )
   {
-    while( prev_interrupt_counter == interrupt_counter ) {}
+    pause_for_interrupt();
     update();
-    prev_interrupt_counter = interrupt_counter;
   }
+  
+  // revert to initial speed
   MsTimer2::msecs = update_frequency;
-  interrupt_counter = switch_after + 1;
 }
 
 
@@ -246,8 +241,7 @@ void linear_transition( const rgbInfo& start_value, const rgbInfo& target_value,
   float stop_cnt = interrupt_counter + ms;
   while ( interrupt_counter < stop_cnt )
   {
-    while ( interrupt_counter == prev_interrupt_counter ) {}
-    prev_interrupt_counter = interrupt_counter;
+    pause_for_interrupt();
     
     float multiplier = 1 - (stop_cnt - interrupt_counter)/ms;
     rgbInfo_t c( 
@@ -270,10 +264,17 @@ void update_interrupt_counter()
   audio.update_amplitude();
 }
 
-// Used for transitions between routines (hypothetically)
+// Returns after the next interrupt
+void pause_for_interrupt()
+{
+  while ( interrupt_counter == prev_interrupt_counter ) {}
+  prev_interrupt_counter = interrupt_counter;
+}
+
+// Used for transitions between routines
 float transitional_value( const float& from, const float& to, float multiplier )
 {
-  if ( multiplier < 0 )
+  if ( multiplier < 0 ) 
   {
     multiplier = 0;
   }
