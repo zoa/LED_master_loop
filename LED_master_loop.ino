@@ -37,6 +37,21 @@ const Audio_monitor& audio = Audio_monitor::instance();
 boolean transitioning = false;
 
 
+boolean hiding = false;
+const byte hiding_slowdown_factor = 8;
+
+
+
+
+void allocate_simple_sines( boolean back_from_hiding=false )
+{
+  update = update_simple;
+  waves[0] = new Sine_generator( 0, 15, 1 + back_from_hiding*hiding_slowdown_factor, PI/2 );
+  // all the /3s are a quick way to get the speed looking right while maintaining prime number ratios
+  waves[1] = new Sine_generator( 20, 255, 11/3 + back_from_hiding*hiding_slowdown_factor, 0 );
+  waves[2] = new Sine_generator( 20, 255, 17/3 + back_from_hiding*hiding_slowdown_factor, 0 );
+}
+
 //////// Setup //////////
 
 void setup()
@@ -64,6 +79,10 @@ void setup()
 
 void loop()
 {  
+  if ( audio.get_amplitude_float() > 0.95 )
+  {
+    hide_in_ground();
+  }
   if ( interrupt_counter > switch_after )
   {
     //byte i = random(0,4);
@@ -176,6 +195,31 @@ void update_convolved()
     strip.show();
   }
 }
+
+void hide_in_ground()
+{
+  for ( int i = stripLen - 1; i >= 0; --i )
+  {
+    strip.pushFront( rgbInfo_t(0,0,0) );
+    strip.show();
+    delay(5); // if we use the interrupt timer for this it'll be too slow
+  }
+  delay(2000);
+  deallocate_waveforms();
+  allocate_simple_sines();
+  library_update = &Zoa_WS2801::pushBack;
+  MsTimer2::msecs = MsTimer2::msecs * hiding_slowdown_factor;
+  linear_transition();
+  for ( int i = 0; i < stripLen; ++i )
+  {
+    while( prev_interrupt_counter == interrupt_counter ) {}
+    update();
+    prev_interrupt_counter = interrupt_counter;
+  }
+  MsTimer2::msecs = update_frequency;
+  interrupt_counter = switch_after + 1;
+}
+
 
 
 //////// Transition functions //////////
