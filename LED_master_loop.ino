@@ -60,7 +60,7 @@ void setup()
   strip.begin();
   strip.setAll(rgbInfo_t(0,0,0));
   
-  switch_after = 5000;
+  switch_after = 25000;
   interrupt_counter = switch_after + 1;
   prev_interrupt_counter = interrupt_counter;
   active_routine = 0;
@@ -86,13 +86,13 @@ void loop()
   if ( interrupt_counter > switch_after )
   {
     //byte i = random(0,4);
-    byte i = (active_routine+1) % 4;
+    byte i = (active_routine+1) % 6;
     if ( i != active_routine )
     {
       deallocate_waveforms();
       
       // Decide how to show the current pattern (chasing up, chasing down, changing the whole strip at once )
-      byte update_func = random(0,2);
+      byte update_func = random(0,3);
       switch ( update_func )
       {
         case 1:
@@ -113,8 +113,8 @@ void loop()
           update = update_simple;
           waves[0] = new Sine_generator( 0, 15, 1, PI/2 );
            // all the /3s are a quick way to get the speed looking right while maintaining prime number ratios
-          waves[1] = new Sine_generator( 20, 255, 11/3, 0 );
-          waves[2] = new Sine_generator( 20, 255, 17/3, 0 );
+          waves[1] = new Sine_generator( 0, 255, 11/3, 0 );
+          waves[2] = new Sine_generator( 0, 255, 17/3, 0 );
           break;
         case 1:
           // green and purple waves, same frequency but out of phase
@@ -142,15 +142,31 @@ void loop()
           break;
         case 4:
           // purple-blue with bright blue twinkles
+          // this could be a startle routine later
           update = update_simple;
           waves[0] = new Sine_generator( 0, 8, 7/3, PI/2 );
           waves[1] = new Sine_generator( 0, 10, 7/3, 0 );
-          waves[2] = new White_noise_generator( 230, 255, 1, 30, 20 );
+          waves[2] = new White_noise_generator( 230, 255, 20, 120, 20, 5 );
           break;
+        case 5:
+          // blue with pink-yellow bits and occasional white twinkles
+          update = update_twinkle_white;
+          waves[0] = new Sine_generator( 5, 15, 5, PI/2 );
+          waves[1] = new Linear_generator( Linear_generator::TRIANGLE, 0, 30, 1, 30 ); //Sine_generator( 0, 30, PI/2 );//Empty_waveform();//Sine_generator( 0, 255, 5/3, 0 );
+          waves[2] = new Sine_generator( 0, 255, 5, 0 );
+          waves[3] = new White_noise_generator( 255, 255, 20, 150, 0, 2 );  
+          break;
+        case 6:/*
+        // alternating r/g/b bands - this is for testing
+          update = update_simple;
+          waves[0] = new Square_generator( 0, 255, 1, 20, 40, 20 );
+          waves[1] = new Square_generator( 0, 255, 1, 20, 40, 40 );
+          waves[2] = new Square_generator( 0, 255, 1, 20, 40, 0 );
+          */
       }
       active_routine = i;
       interrupt_counter = 0;
-      linear_transition();
+      linear_transition(500);
     }
   }
   // only update once every tick of the timer
@@ -179,11 +195,86 @@ void update_simple()
 
 void update_convolved()
 {
-  (strip.*library_update)( rgbInfo( next_convolved_value(waves[0],waves[3]), next_convolved_value(waves[1],waves[4]), next_convolved_value(waves[2],waves[5]) ) );
+  (strip.*library_update)( rgbInfo_t( next_convolved_value(waves[0],waves[3]), next_convolved_value(waves[1],waves[4]), next_convolved_value(waves[2],waves[5]) ) );
   if ( !transitioning )
   {
     strip.show();
   }
+}
+
+
+void update_summed()
+{
+  (strip.*library_update)( rgbInfo_t( next_summed_value(waves[0],waves[3]), next_summed_value(waves[1],waves[4]), next_summed_value(waves[2],waves[5]) ) );
+  if ( !transitioning )
+  {
+    strip.show();
+  }
+}
+
+void update_twinkle_white()
+{
+  // it's a bit seizure-inducing if you make the whole thing flash white at once
+  if ( library_update != &Zoa_WS2801::pushBack )
+  {
+    library_update = &Zoa_WS2801::pushBack;
+  }
+  // advance the first three (the base waves) plus the fourth (the white noise)
+  for ( byte i = 0; i < 4; ++i )
+  {
+    waves[i]->next_value();
+  }
+  // add the twinkles to all 3 base waves
+  (strip.*library_update)( rgbInfo_t( summed_value(waves[0], waves[3]), summed_value(waves[1],waves[3]), summed_value(waves[2],waves[3]) ) );
+  if ( !transitioning )
+  {
+    strip.show();
+  }
+}
+
+// NOT TESTED
+void update_greyscale()
+{
+  (strip.*library_update)( next_greyscale_value( waves[0], waves[1], waves[2] ) );
+  if ( !transitioning )
+  {
+    strip.show();
+  }
+}
+
+
+/// Startle routines
+
+// rapidly twinkle white on top of some sines with more red than usual, then slowly stop twinkling and eventually shift
+// back to simple sines
+void spastic_flicker()
+{
+  update = update_twinkle_white;
+  White_noise_generator* twinkles = new White_noise_generator( 255, 255, 5, 8, 0 ); 
+  waves[0] = new Sine_generator( 0, 15, 7, 0 );
+  waves[1] = new Empty_waveform();//Sine_generator( 5, 20, 11 );//Empty_waveform();//Sine_generator( 0, 255, 5/3, 0 );
+  waves[2] = new Sine_generator( 5, 20, 11, PI/2 ); //Empty_waveform();//Sine_generator( 0, 255, 5, 0 );
+  waves[3] = twinkles; 
+  
+  // ideally all these numbers shouldn't be hard-coded, but in the meantime, i've set it up so that it'll only throw
+  // the overall timing off if the switch interval is less than 30 seconds which it never will be on the real sculpture.
+  unsigned long int stop_time = interrupt_counter + 25000;
+  unsigned long int slow_time = interrupt_counter + 3000;
+  uint16_t steps = 0;
+  while ( interrupt_counter < stop_time )
+  {
+    update();
+    if ( interrupt_counter > slow_time && steps%8 == 0 )
+    {
+      twinkles->increase_spacing(1);
+    }
+    pause_for_interrupt();
+    ++steps;
+  }
+  update = update_simple;
+  deallocate_waveforms();
+  allocate_simple_sines();
+  linear_transition(2000);
 }
 
 // rapidly go black from top to bottom, then pause, then come back out at a reduced speed
@@ -204,7 +295,7 @@ void hide_in_ground()
   
   // come slowly back up
   MsTimer2::msecs *= hiding_slowdown_factor;
-  linear_transition();
+  linear_transition(750);
   for ( int i = 0; i < stripLen*2; ++i )
   {
     pause_for_interrupt();
@@ -219,7 +310,7 @@ void hide_in_ground()
 
 //////// Transition functions //////////
 
-void linear_transition()
+void linear_transition(uint16_t duration)
 {  
   transitioning = true;
   uint16_t pixel = (library_update == &Zoa_WS2801::pushBack) ? stripLen-1 : 0;
@@ -233,24 +324,23 @@ void linear_transition()
   strip.setPixelColor( pixel, temp_first_value.r, temp_first_value.g, temp_first_value.b );
   transitioning = false;
   
-  linear_transition(temp_first_value,next_value,500);
+  linear_transition(temp_first_value,next_value,duration);
 }
 
 void linear_transition( const rgbInfo& start_value, const rgbInfo& target_value, uint16_t ms )
 {
-  float stop_cnt = interrupt_counter + ms;
+  unsigned long int stop_cnt = interrupt_counter + ms;
   while ( interrupt_counter < stop_cnt )
-  {
-    pause_for_interrupt();
-    
+  {    
     float multiplier = 1 - (stop_cnt - interrupt_counter)/ms;
     rgbInfo_t c( 
-     transitional_value( start_value.r, target_value.r, multiplier ),
-     transitional_value( start_value.g, target_value.g, multiplier ),
-     transitional_value( start_value.b, target_value.b, multiplier )
+     interpolated_value( start_value.r, target_value.r, multiplier ),
+     interpolated_value( start_value.g, target_value.g, multiplier ),
+     interpolated_value( start_value.b, target_value.b, multiplier )
      );    
     (strip.*library_update)(c);
     strip.show();
+    pause_for_interrupt();
   }
 }
 
@@ -271,21 +361,6 @@ void pause_for_interrupt()
   prev_interrupt_counter = interrupt_counter;
 }
 
-// Used for transitions between routines
-float transitional_value( const float& from, const float& to, float multiplier )
-{
-  if ( multiplier < 0 ) 
-  {
-    multiplier = 0;
-  }
-  else if ( multiplier > 1 )
-  {
-    multiplier = 1;
-  }
-  float val = from * (1-multiplier) + to * multiplier;
-  return val;
-}
-
 // free the memory in the waves array and sets the update modes to 0
 void deallocate_waveforms()
 {
@@ -299,7 +374,7 @@ void deallocate_waveforms()
   }
 }
 
-
+// Pass the latest audio value to the waveforms.
 void update_audio()
 {
   float level = audio.get_amplitude_float();
