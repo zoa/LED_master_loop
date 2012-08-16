@@ -11,7 +11,7 @@
 
 #define dataPin 2  // Yellow wire on Adafruit Pixels
 #define clockPin 3   // Green wire on Adafruit Pixels
-#define stripLen 40
+#define stripLen 80
 
 const byte update_frequency = 30; // how often to update the LEDs
 volatile unsigned long int interrupt_counter; // updates every time the interrupt timer overflows
@@ -60,7 +60,7 @@ void setup()
   strip.begin();
   strip.setAll(rgbInfo_t(0,0,0));
   
-  switch_after = 25000;
+  switch_after = 10000;
   interrupt_counter = switch_after + 1;
   prev_interrupt_counter = interrupt_counter;
   active_routine = 0;
@@ -91,26 +91,13 @@ void loop()
     {
       deallocate_waveforms();
       
-      // Decide how to show the current pattern (chasing up, chasing down, changing the whole strip at once )
-      byte update_func = random(0,3);
-      switch ( update_func )
-      {
-        case 1:
-          library_update = &Zoa_WS2801::pushBack;
-          break;
-        case 2:
-          library_update = &Zoa_WS2801::setAll;
-          break;
-        default:
-          library_update = &Zoa_WS2801::pushFront;
-      }
-      
       // Decide which routine to show next
       switch (i)
       {
         case 0:
           // green and blue waves going in and out of phase
           update = update_simple;
+          set_library_update(true);
           waves[0] = new Sine_generator( 0, 8, 1, PI/2 );
            // all the /3s are a quick way to get the speed looking right while maintaining prime number ratios
           waves[1] = new Sine_generator( 0, 255, 11/3, 0 );
@@ -119,6 +106,7 @@ void loop()
         case 1:
           // green and purple waves, same frequency but out of phase
           update = update_simple;
+          set_library_update(true);
           waves[0] = new Sine_generator( 0, 5, 5/3, 0 );
           waves[1] = new Sine_generator( 0, 200, 5/3, 0 );
           waves[2] = new Sine_generator( 0, 255, 5/3, PI/2 );  
@@ -126,24 +114,27 @@ void loop()
         case 2:
           // two waves multiplied together
           update = update_convolved; 
+          set_library_update(true);
           waves[0] = new Sine_generator( 0, 100, 7, PI/2 );
-          waves[1] = new Sine_generator( 30, 150, 7/3, 0 );
-          waves[2] = new Sine_generator( 30, 255, 7/3, PI/2 );
+          waves[1] = new Sine_generator( 30, 255, 11/3, PI/2 );
+          waves[2] = new Sine_generator( 30, 150, 7/3, 0 );
           waves[3] = new Sine_generator( 0, 100, 7, PI/4 );
-          waves[4] = new Sine_generator( 30, 150, 7/12, 0 );
-          waves[5] = new Sine_generator( 30, 250, 7/12, PI/2 );
+          waves[4] = new Sine_generator( 30, 250, 11/12, PI/2 );
+          waves[5] = new Sine_generator( 30, 150, 7/12, 0 );
           break;
         case 3:
           // mostly light blue/turquoise/purple with occasional bright green
           update = update_simple;
+          set_library_update(true);
           waves[0] = new Linear_generator( Linear_generator::SAWTOOTH, 0, 30, 1, 75 );
           waves[1] = new Sine_generator( 0, 30, 1, 0 );
-          waves[2] = new Linear_generator( Linear_generator::TRIANGLE, 0, 255, 1, 128 );
+          waves[2] = new Linear_generator( Linear_generator::TRIANGLE, 0, 255, 5, 128 );
           break;
         case 4:
           // purple-blue with bright blue twinkles
           // this could be a startle routine later
           update = update_simple;
+          set_library_update(false); // this one looks weird if it updates the whole thing at once
           waves[0] = new Sine_generator( 0, 8, 7/3, PI/2 );
           waves[1] = new Sine_generator( 0, 10, 7/3, 0 );
           waves[2] = new White_noise_generator( 230, 255, 20, 120, 20, 5 );
@@ -151,6 +142,7 @@ void loop()
         case 5:
           // blue with pink-yellow bits and occasional white twinkles
           update = update_twinkle_white;
+          set_library_update(false); // has to be a chase
           waves[0] = new Sine_generator( 5, 15, 5, PI/2 );
           waves[1] = new Linear_generator( Linear_generator::TRIANGLE, 0, 30, 1, 30 ); //Sine_generator( 0, 30, PI/2 );//Empty_waveform();//Sine_generator( 0, 255, 5/3, 0 );
           waves[2] = new Sine_generator( 0, 255, 5, 0 );
@@ -165,6 +157,7 @@ void loop()
           */
           // dim sine waves with occasional flares of bright colors - could be adapted into a startle routine
           update = update_scaled_sum;
+          set_library_update(false); // has to be a chase
           waves[0] = new Sine_generator( 0, 5, 7/2, PI/2 );
           waves[1] = new Sine_generator( 0, 10, 7/2, 0 );
           waves[2] = new Sine_generator( 0, 10, 13/2, 0 );
@@ -273,6 +266,7 @@ void update_scaled_sum()
 void spastic_flicker()
 {
   update = update_twinkle_white;
+  set_library_update(false);
   White_noise_generator* twinkles = new White_noise_generator( 255, 255, 5, 8, 0 ); 
   waves[0] = new Sine_generator( 0, 15, 7, 0 );
   waves[1] = new Empty_waveform();//Sine_generator( 5, 20, 11 );//Empty_waveform();//Sine_generator( 0, 255, 5/3, 0 );
@@ -342,15 +336,24 @@ void spike_intensities()
 void linear_transition(uint16_t duration)
 {  
   transitioning = true;
-  uint16_t pixel = (library_update == &Zoa_WS2801::pushBack) ? stripLen-1 : 0;
   // this is a total hack to get the first value of the next routine without actually displaying it (or having to change the update functions).
   // cache the current first value, update, grab the new first value, then reset the first pixel.
   // this will fall apart if the update routine updates all the pixels and not just the first one!!! check the transitioning flag in all
   // update functions to keep this from happening.
+  boolean was_set_all = library_update == &Zoa_WS2801::setAll;
+  if ( was_set_all )
+  {
+    library_update = &Zoa_WS2801::pushBack;
+  }
+  uint16_t pixel = (library_update == &Zoa_WS2801::pushBack) ? stripLen-1 : 0;
   rgbInfo_t temp_first_value = strip.getPixelRGBColor(pixel);
   update();
   rgbInfo_t next_value = strip.getPixelRGBColor(pixel);
   strip.setPixelColor( pixel, temp_first_value.r, temp_first_value.g, temp_first_value.b );
+  if ( was_set_all )
+  {
+    library_update = &Zoa_WS2801::setAll;
+  }
   transitioning = false;
   
   linear_transition(temp_first_value,next_value,duration);
@@ -375,6 +378,24 @@ void linear_transition( const rgbInfo& start_value, const rgbInfo& target_value,
 
 
 //////// Utility functions //////////
+
+// allow_set_all option is currently disabled pending making the transition not look choppy
+void set_library_update( boolean allow_set_all )
+{
+  // Decide how to show the current pattern (chasing up, chasing down, changing the whole strip at once )
+  byte update_func = random(0,2);//random(0,2+allow_set_all);
+  switch ( update_func )
+  {
+    case 1:
+      library_update = &Zoa_WS2801::pushBack;
+      break;
+    case 2:
+      library_update = &Zoa_WS2801::setAll;
+      break;
+    default:
+      library_update = &Zoa_WS2801::pushFront;
+  }
+}
 
 // Called by the interrupt timer
 void update_interrupt_counter()
@@ -407,7 +428,6 @@ void deallocate_waveforms()
 void update_audio()
 {
   float level = audio.get_amplitude_float();
-  Serial.println(level);
   for ( byte i = 0; i < WAVES; ++i )
   {
     if ( waves[i] != NULL )
