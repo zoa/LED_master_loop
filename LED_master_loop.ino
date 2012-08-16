@@ -86,7 +86,7 @@ void loop()
   if ( interrupt_counter > switch_after )
   {
     //byte i = random(0,4);
-    byte i = (active_routine+1) % 6;
+    byte i = (active_routine+1) % 7;
     if ( i != active_routine )
     {
       deallocate_waveforms();
@@ -111,7 +111,7 @@ void loop()
         case 0:
           // green and blue waves going in and out of phase
           update = update_simple;
-          waves[0] = new Sine_generator( 0, 15, 1, PI/2 );
+          waves[0] = new Sine_generator( 0, 8, 1, PI/2 );
            // all the /3s are a quick way to get the speed looking right while maintaining prime number ratios
           waves[1] = new Sine_generator( 0, 255, 11/3, 0 );
           waves[2] = new Sine_generator( 0, 255, 17/3, 0 );
@@ -128,16 +128,16 @@ void loop()
           update = update_convolved; 
           waves[0] = new Sine_generator( 0, 100, 7, PI/2 );
           waves[1] = new Sine_generator( 30, 150, 7/3, 0 );
-          waves[2] = new Sine_generator( 30, 255, 13/3, PI/2 );
+          waves[2] = new Sine_generator( 30, 255, 7/3, PI/2 );
           waves[3] = new Sine_generator( 0, 100, 7, PI/4 );
           waves[4] = new Sine_generator( 30, 150, 7/12, 0 );
-          waves[5] = new Sine_generator( 30, 250, 13/12, PI/2 );
+          waves[5] = new Sine_generator( 30, 250, 7/12, PI/2 );
           break;
         case 3:
           // mostly light blue/turquoise/purple with occasional bright green
           update = update_simple;
           waves[0] = new Linear_generator( Linear_generator::SAWTOOTH, 0, 30, 1, 75 );
-          waves[1] = new Sine_generator( 0, 50, 1, 0 );
+          waves[1] = new Sine_generator( 0, 30, 1, 0 );
           waves[2] = new Linear_generator( Linear_generator::TRIANGLE, 0, 255, 1, 128 );
           break;
         case 4:
@@ -163,6 +163,14 @@ void loop()
           waves[1] = new Square_generator( 0, 255, 1, 20, 40, 40 );
           waves[2] = new Square_generator( 0, 255, 1, 20, 40, 0 );
           */
+          // dim sine waves with occasional flares of bright colors - could be adapted into a startle routine
+          update = update_scaled_sum;
+          waves[0] = new Sine_generator( 0, 5, 7/2, PI/2 );
+          waves[1] = new Sine_generator( 0, 10, 7/2, 0 );
+          waves[2] = new Sine_generator( 0, 10, 13/2, 0 );
+          waves[3] = new Linear_generator( Linear_generator::TRIANGLE, 0, 255, 100, 0, 31 );
+          
+          break;
       }
       active_routine = i;
       interrupt_counter = 0;
@@ -183,6 +191,8 @@ void loop()
 
 //////// LED display routines //////////
 
+
+// just show the first 3 waves in the R, G and B channels
 void update_simple()
 {
   (strip.*library_update)( get_next_rgb( waves[0], waves[1], waves[2] ) );
@@ -192,7 +202,7 @@ void update_simple()
   }
 }
 
-
+// multiply waves[0:2] by waves[3:5]
 void update_convolved()
 {
   (strip.*library_update)( rgbInfo_t( next_convolved_value(waves[0],waves[3]), next_convolved_value(waves[1],waves[4]), next_convolved_value(waves[2],waves[5]) ) );
@@ -202,7 +212,7 @@ void update_convolved()
   }
 }
 
-
+// simply sum the first 3 and next 3 waves (can't remember if this is tested yet)
 void update_summed()
 {
   (strip.*library_update)( rgbInfo_t( next_summed_value(waves[0],waves[3]), next_summed_value(waves[1],waves[4]), next_summed_value(waves[2],waves[5]) ) );
@@ -212,6 +222,8 @@ void update_summed()
   }
 }
 
+// add the 4th wave to the first 3 waves, making sure the library_update function is set to pushBack. Used to
+// superimpose white twinkles.
 void update_twinkle_white()
 {
   // it's a bit seizure-inducing if you make the whole thing flash white at once
@@ -241,6 +253,17 @@ void update_greyscale()
     strip.show();
   }
 }
+
+// add waves[3] to waves[0:2], increasing the brightnesses of all 3 waves proportionally
+void update_scaled_sum()
+{
+  (strip.*library_update)( rgb_scaled_summed_value( waves[0], waves[1], waves[2], waves[3]->next_raw_value() ) );
+  if ( !transitioning )
+  {
+    strip.show();
+  }
+}
+
 
 
 /// Startle routines
@@ -306,6 +329,12 @@ void hide_in_ground()
   MsTimer2::msecs = update_frequency;
 }
 
+// NOT DONE
+void spike_intensities()
+{
+  Linear_generator triangle( Linear_generator::TRIANGLE, 0, 255, 5 );
+  
+}
 
 
 //////// Transition functions //////////
