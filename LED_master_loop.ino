@@ -60,7 +60,7 @@ void setup()
   strip.begin();
   strip.setAll(rgbInfo_t(0,0,0));
   
-  switch_after = 10000;
+  switch_after = 200000;
   interrupt_counter = switch_after + 1;
   prev_interrupt_counter = interrupt_counter;
   active_routine = 0;
@@ -356,15 +356,14 @@ void linear_transition(uint16_t duration)
   }
   transitioning = false;
   
-  linear_transition(temp_first_value,next_value,duration);
+  linear_transition(temp_first_value,next_value,(float)duration/update_frequency);
 }
 
-void linear_transition( const rgbInfo& start_value, const rgbInfo& target_value, uint16_t ms )
+void linear_transition( const rgbInfo& start_value, const rgbInfo& target_value, byte steps )
 {
-  unsigned long int stop_cnt = interrupt_counter + ms;
-  while ( interrupt_counter < stop_cnt )
+  for ( byte i = 0; i < steps; ++i )
   {    
-    float multiplier = 1 - (stop_cnt - interrupt_counter)/ms;
+    float multiplier = (float)i/steps;
     rgbInfo_t c( 
      interpolated_value( start_value.r, target_value.r, multiplier ),
      interpolated_value( start_value.g, target_value.g, multiplier ),
