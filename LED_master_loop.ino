@@ -4,7 +4,7 @@
 #include "MsTimer2.h"
 #include "Waveform_utilities.h"
 #include "Audio_monitor.h"
-
+#include "Routine_switcher.h"
 
 
 //////// Globals //////////
@@ -17,7 +17,7 @@ const byte update_frequency = 30; // how often to update the LEDs
 volatile unsigned long int interrupt_counter; // updates every time the interrupt timer overflows
 unsigned long int prev_interrupt_counter; // the main loop uses this to detect when the interrupt counter has changed 
 
-unsigned int switch_after; // swap routines after this many milliseconds
+unsigned long int switch_after; // swap routines after this many milliseconds
 unsigned int active_routine; // matches the #s from the switch statement in the main loop
 void (*update)(); // pointer to current led-updating function within this sketch
 
@@ -33,9 +33,9 @@ Zoa_WS2801 strip = Zoa_WS2801(stripLen, dataPin, clockPin, WS2801_GRB);
 Waveform_generator* waves[WAVES]={};
 
 const Audio_monitor& audio = Audio_monitor::instance();
+Routine_switcher order;
 
 boolean transitioning = false;
-
 
 boolean hiding = false;
 const byte hiding_slowdown_factor = 8;
@@ -85,8 +85,9 @@ void loop()
   }
   if ( interrupt_counter > switch_after )
   {
-    //byte i = random(0,4);
-    byte i = (active_routine+1) % 7;
+    order.advance();
+    byte i = order.active_routine(); //(active_routine+1) % 8;
+    Serial.println(i);
     if ( i != active_routine )
     {
       deallocate_waveforms();
@@ -148,13 +149,14 @@ void loop()
           waves[2] = new Sine_generator( 0, 255, 5, 0 );
           waves[3] = new White_noise_generator( 255, 255, 20, 150, 0, 2 );  
           break;
-        case 6:/*
-        // alternating r/g/b bands - this is for testing
+        case 6:
           update = update_simple;
-          waves[0] = new Square_generator( 0, 255, 1, 20, 40, 20 );
-          waves[1] = new Square_generator( 0, 255, 1, 20, 40, 40 );
-          waves[2] = new Square_generator( 0, 255, 1, 20, 40, 0 );
-          */
+          set_library_update(false);
+          waves[0] = new Sine_generator( 0, 140, 7, PI/2 );
+          waves[1] = new Sine_generator( 20, 120, 7, PI/2 );
+          waves[2] = new Sine_generator( 0, 255, 7, 0 );
+          break;
+        case 7:
           // dim sine waves with occasional flares of bright colors - could be adapted into a startle routine
           update = update_scaled_sum;
           set_library_update(false); // has to be a chase
@@ -162,7 +164,6 @@ void loop()
           waves[1] = new Sine_generator( 0, 10, 7/2, 0 );
           waves[2] = new Sine_generator( 0, 10, 13/2, 0 );
           waves[3] = new Linear_generator( Linear_generator::TRIANGLE, 0, 255, 100, 0, 31 );
-          
           break;
       }
       active_routine = i;
@@ -323,6 +324,25 @@ void hide_in_ground()
   MsTimer2::msecs = update_frequency;
 }
 
+void white_rings()
+{
+  unsigned long int stop_time = interrupt_counter + 10000;
+  update = update_simple;
+  library_update = &Zoa_WS2801::pushBack;
+  // alternating r/g/b bands - this is for testing
+  waves[0] = new Square_generator( 0, 255, 4, 20, 30, 0 );
+  waves[1] = new Square_generator( 0, 255, 4, 20, 30, 0 );
+  waves[2] = new Square_generator( 0, 255, 4, 20, 30, 0 );
+  while ( interrupt_counter < stop_time )
+  {
+    update();
+    pause_for_interrupt();
+  }
+  deallocate_waveforms();
+  allocate_simple_sines();
+  linear_transition( 500 );
+}
+
 // NOT DONE
 void spike_intensities()
 {
@@ -340,23 +360,13 @@ void linear_transition(uint16_t duration)
   // cache the current first value, update, grab the new first value, then reset the first pixel.
   // this will fall apart if the update routine updates all the pixels and not just the first one!!! check the transitioning flag in all
   // update functions to keep this from happening.
-  boolean was_set_all = library_update == &Zoa_WS2801::setAll;
-  if ( was_set_all )
-  {
-    library_update = &Zoa_WS2801::pushBack;
-  }
   uint16_t pixel = (library_update == &Zoa_WS2801::pushBack) ? stripLen-1 : 0;
   rgbInfo_t temp_first_value = strip.getPixelRGBColor(pixel);
   update();
   rgbInfo_t next_value = strip.getPixelRGBColor(pixel);
   strip.setPixelColor( pixel, temp_first_value.r, temp_first_value.g, temp_first_value.b );
-  if ( was_set_all )
-  {
-    library_update = &Zoa_WS2801::setAll;
-  }
   transitioning = false;
-  
-  linear_transition(temp_first_value,next_value,(float)duration/update_frequency);
+  linear_transition(temp_first_value,next_value,duration/update_frequency);
 }
 
 void linear_transition( const rgbInfo& start_value, const rgbInfo& target_value, byte steps )
@@ -382,7 +392,7 @@ void linear_transition( const rgbInfo& start_value, const rgbInfo& target_value,
 void set_library_update( boolean allow_set_all )
 {
   // Decide how to show the current pattern (chasing up, chasing down, changing the whole strip at once )
-  byte update_func = random(0,2);//random(0,2+allow_set_all);
+  byte update_func = order.traveling_down();//random(0,2);//random(0,2+allow_set_all);
   switch ( update_func )
   {
     case 1:
