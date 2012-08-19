@@ -11,7 +11,7 @@
 
 #define dataPin 2  // Yellow wire on Adafruit Pixels
 #define clockPin 3   // Green wire on Adafruit Pixels
-#define stripLen 80
+#define stripLen 20
 
 const byte update_frequency = 30; // how often to update the LEDs
 volatile unsigned long int interrupt_counter; // updates every time the interrupt timer overflows
@@ -32,8 +32,9 @@ Zoa_WS2801 strip = Zoa_WS2801(stripLen, dataPin, clockPin, WS2801_GRB);
 #define WAVES 6
 Waveform_generator* waves[WAVES]={};
 
-const Audio_monitor& audio = Audio_monitor::instance();
+Audio_monitor& audio = Audio_monitor::instance();
 Routine_switcher order;
+byte startle_counter;
 
 boolean transitioning = false;
 
@@ -60,12 +61,13 @@ void setup()
   strip.begin();
   strip.setAll(rgbInfo_t(0,0,0));
   
-  switch_after = 200000;
+  switch_after = 120000;
   interrupt_counter = switch_after + 1;
   prev_interrupt_counter = interrupt_counter;
   active_routine = 0;
   update = NULL;
   library_update = NULL;
+  startle_counter = 1; // don't start by hiding in the ground
   
   // update the interrupt counter (and thus the LEDs) every 30ms. The strip updating takes ~0.1ms 
   // for each LED in the strip, and we are assuming a maximum strip length of 240, plus some extra wiggle room.
@@ -79,15 +81,14 @@ void setup()
 
 void loop()
 {  
-  if ( audio.get_amplitude_float() > 0.95 )
+  if ( audio.is_anomolously_loud() )
   {
-    hide_in_ground();
+    do_startle_routine();
   }
   if ( interrupt_counter > switch_after )
   {
     order.advance();
     byte i = order.active_routine(); //(active_routine+1) % 8;
-    Serial.println(i);
     if ( i != active_routine )
     {
       deallocate_waveforms();
@@ -108,9 +109,9 @@ void loop()
           // green and purple waves, same frequency but out of phase
           update = update_simple;
           set_library_update(true);
-          waves[0] = new Sine_generator( 0, 5, 5/3, 0 );
-          waves[1] = new Sine_generator( 0, 200, 5/3, 0 );
-          waves[2] = new Sine_generator( 0, 255, 5/3, PI/2 );  
+          waves[0] = new Sine_generator( 0, 50, 5/3, 0 );
+          waves[1] = new Sine_generator( 0, 255, 5/3, PI/2 );
+          waves[2] = new Sine_generator( 0, 60, 5/3, 0 );  
           break;
         case 2:
           // two waves multiplied together
@@ -125,13 +126,25 @@ void loop()
           break;
         case 3:
           // mostly light blue/turquoise/purple with occasional bright green
-          update = update_simple;
+          update = update_twinkle_white;
           set_library_update(true);
           waves[0] = new Linear_generator( Linear_generator::SAWTOOTH, 0, 30, 1, 75 );
           waves[1] = new Sine_generator( 0, 30, 1, 0 );
           waves[2] = new Linear_generator( Linear_generator::TRIANGLE, 0, 255, 5, 128 );
+          waves[3] = new White_noise_generator( 255, 255, 20, 150, 0, 2 );  
           break;
         case 4:
+          // moar green
+          update = update_convolved;//simple;
+          set_library_update(true);
+          waves[0] = new Sine_generator( 0, 20, 5/2, PI/2 );//Empty_waveform();
+          waves[1] = new Linear_generator( Linear_generator::TRIANGLE, 20, 255, 2 );
+          waves[2] = new Sine_generator( 0, 10, 5/2, 0 );//Sine_generator( 5, 20, 3, PI/2 );
+          waves[3] = new Constant_waveform(255);
+          waves[4] = new Sine_generator( 200, 255, 7/2, 0 );
+          waves[5] = new Constant_waveform(255);
+          break;
+        case 5:
           // purple-blue with bright blue twinkles
           // this could be a startle routine later
           update = update_simple;
@@ -140,7 +153,7 @@ void loop()
           waves[1] = new Sine_generator( 0, 10, 7/3, 0 );
           waves[2] = new White_noise_generator( 230, 255, 20, 120, 20, 5 );
           break;
-        case 5:
+        case 6:
           // blue with pink-yellow bits and occasional white twinkles
           update = update_twinkle_white;
           set_library_update(false); // has to be a chase
@@ -149,14 +162,15 @@ void loop()
           waves[2] = new Sine_generator( 0, 255, 5, 0 );
           waves[3] = new White_noise_generator( 255, 255, 20, 150, 0, 2 );  
           break;
-        case 6:
+        case 7:
+          // blue with some orange
           update = update_simple;
           set_library_update(false);
-          waves[0] = new Sine_generator( 0, 140, 7, PI/2 );
-          waves[1] = new Sine_generator( 20, 120, 7, PI/2 );
-          waves[2] = new Sine_generator( 0, 255, 7, 0 );
+          waves[0] = new Sine_generator( 0, 140, 3.5, PI/2 );
+          waves[1] = new Sine_generator( 20, 120, 3.5, PI/2 );
+          waves[2] = new Sine_generator( 0, 210, 3.5, 0 );
           break;
-        case 7:
+        case 8:
           // dim sine waves with occasional flares of bright colors - could be adapted into a startle routine
           update = update_scaled_sum;
           set_library_update(false); // has to be a chase
@@ -165,9 +179,16 @@ void loop()
           waves[2] = new Sine_generator( 0, 10, 13/2, 0 );
           waves[3] = new Linear_generator( Linear_generator::TRIANGLE, 0, 255, 100, 0, 31 );
           break;
+        case 9:
+          // purple
+          update = update_simple;
+          set_library_update(false);
+          waves[0] = new Sine_generator( 4, 100, 2 );
+          waves[1] = new Sine_generator( 0, 10, 2 );
+          waves[2] = new Sine_generator( 10, 200, 2 );
       }
       active_routine = i;
-      interrupt_counter = 0;
+      interrupt_counter -= switch_after;
       linear_transition(500);
     }
   }
@@ -262,21 +283,45 @@ void update_scaled_sum()
 
 /// Startle routines
 
+void do_startle_routine()
+{
+  switch (startle_counter%5)
+  {
+    case 0:
+      hide_in_ground();
+      break;
+    case 1:
+      spastic_flicker();
+      break;
+    case 2: 
+      single_phase_startle_reaction(0);
+      break;
+    case 3:
+      single_phase_startle_reaction(1);
+      break;
+    case 4:
+      single_phase_startle_reaction(2);
+      break;
+  }
+  ++startle_counter;
+}
+
 // rapidly twinkle white on top of some sines with more red than usual, then slowly stop twinkling and eventually shift
 // back to simple sines
 void spastic_flicker()
 {
   update = update_twinkle_white;
   set_library_update(false);
+  deallocate_waveforms();
   White_noise_generator* twinkles = new White_noise_generator( 255, 255, 5, 8, 0 ); 
   waves[0] = new Sine_generator( 0, 15, 7, 0 );
-  waves[1] = new Empty_waveform();//Sine_generator( 5, 20, 11 );//Empty_waveform();//Sine_generator( 0, 255, 5/3, 0 );
-  waves[2] = new Sine_generator( 5, 20, 11, PI/2 ); //Empty_waveform();//Sine_generator( 0, 255, 5, 0 );
+  waves[1] = new Empty_waveform();
+  waves[2] = new Sine_generator( 5, 20, 11, PI/2 );
   waves[3] = twinkles; 
   
   // ideally all these numbers shouldn't be hard-coded, but in the meantime, i've set it up so that it'll only throw
   // the overall timing off if the switch interval is less than 30 seconds which it never will be on the real sculpture.
-  unsigned long int stop_time = interrupt_counter + 25000;
+  unsigned long int stop_time = interrupt_counter + 20000;
   unsigned long int slow_time = interrupt_counter + 3000;
   uint16_t steps = 0;
   while ( interrupt_counter < stop_time )
@@ -287,12 +332,13 @@ void spastic_flicker()
       twinkles->increase_spacing(1);
     }
     pause_for_interrupt();
+    Serial.println("x");
     ++steps;
   }
   update = update_simple;
   deallocate_waveforms();
   allocate_simple_sines();
-  linear_transition(2000);
+  linear_transition(500);
 }
 
 // rapidly go black from top to bottom, then pause, then come back out at a reduced speed
@@ -302,19 +348,16 @@ void hide_in_ground()
   {
     strip.pushFront( rgbInfo_t(0,0,0) );
     strip.show();
-    delay(5); // if we use the interrupt timer for this it'll be too slow
+    delay(15); // if we use the interrupt timer for this it'll be too slow
   }
-  delay(2000);
+  delay(1500);
   
-  // it'll always do the same thing when it first comes back [for now]
-  deallocate_waveforms();
-  allocate_simple_sines();
   library_update = &Zoa_WS2801::pushBack;
   
   // come slowly back up
   MsTimer2::msecs *= hiding_slowdown_factor;
   linear_transition(750);
-  for ( int i = 0; i < stripLen*2; ++i )
+  for ( int i = 0; i < stripLen; ++i )
   {
     pause_for_interrupt();
     update();
@@ -324,17 +367,43 @@ void hide_in_ground()
   MsTimer2::msecs = update_frequency;
 }
 
-void white_rings()
+void single_phase_startle_reaction( byte waveform_set )
 {
-  unsigned long int stop_time = interrupt_counter + 10000;
-  update = update_simple;
-  library_update = &Zoa_WS2801::pushBack;
-  // alternating r/g/b bands - this is for testing
-  waves[0] = new Square_generator( 0, 255, 4, 20, 30, 0 );
-  waves[1] = new Square_generator( 0, 255, 4, 20, 30, 0 );
-  waves[2] = new Square_generator( 0, 255, 4, 20, 30, 0 );
+  unsigned long int stop_time = interrupt_counter + 20000;
+  deallocate_waveforms();
+  
+  switch (waveform_set) 
+  {
+    case 0:
+      update = update_convolved;
+      library_update = &Zoa_WS2801::setAll;
+      waves[0] = new Sine_generator( 0, 100, 9 );
+      waves[1] = new Sine_generator( 0, 205, 9, PI/2 ); 
+      waves[2] = new Sine_generator( 0, 255, 9 );
+      waves[3] = new Sine_generator( 50, 255, 2 );
+      waves[4] = new Sine_generator( 50, 255, 2, PI/2 );
+      waves[5] = new Constant_waveform(255);
+      break;
+    case 1:
+      update = update_greyscale;
+      set_library_update(false);
+      waves[0] = new Sine_generator( 0, 255, 10, 5 );
+      waves[1] = new Sine_generator( 0, 255, 10, 5 );
+      waves[2] = new Sine_generator( 0, 255, 10, 17 );
+      break;
+    case 2:
+      // sine waves with flares of bright colors
+      update = update_scaled_sum;
+      set_library_update(false); 
+      waves[0] = new Sine_generator( 0, 100, 7, PI/2 );
+      waves[1] = new Sine_generator( 0, 200, 7, 0 );
+      waves[2] = new Sine_generator( 0, 200, 13, 0 );
+      waves[3] = new Linear_generator( Linear_generator::TRIANGLE, 0, 255, 100, 0, 31 );
+      break;
+  }
   while ( interrupt_counter < stop_time )
   {
+    update_audio();
     update();
     pause_for_interrupt();
   }
@@ -342,6 +411,7 @@ void white_rings()
   allocate_simple_sines();
   linear_transition( 500 );
 }
+
 
 // NOT DONE
 void spike_intensities()

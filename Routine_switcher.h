@@ -45,13 +45,13 @@ public:
   }
 
 private:
-  static const byte SIZE = 28;
+  static const byte SIZE = 36;
   // sign determines direction of travel
   const signed char order[SIZE] = { 
-    -1, -2, 3, 4, -5, 6, 7,
-    2, -7, -4, 1, -3, -6, 5, 
-    -1, 4, -2, -5, 7, 3, 6,
-    5, -3, 1, -6, 2, -4, -7
+    -1, -2, 3, 4, -5, 6, 7, -8, -9,
+    2, -7, 9, -4, 8, 1, -3, -6, 5, 
+    -1, -8, 4, -2, -5, -9, 7, 3, 6,
+    5, 9, -3, 1, -6, 8, 2, -4, -7
   };
   signed char cnt;
   signed char dir;
