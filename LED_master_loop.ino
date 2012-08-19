@@ -11,7 +11,7 @@
 
 #define dataPin 2  // Yellow wire on Adafruit Pixels
 #define clockPin 3   // Green wire on Adafruit Pixels
-#define stripLen 20
+#define stripLen 80
 
 const byte update_frequency = 30; // how often to update the LEDs
 volatile unsigned long int interrupt_counter; // updates every time the interrupt timer overflows
@@ -61,7 +61,7 @@ void setup()
   strip.begin();
   strip.setAll(rgbInfo_t(0,0,0));
   
-  switch_after = 120000;
+  switch_after = 240000;
   interrupt_counter = switch_after + 1;
   prev_interrupt_counter = interrupt_counter;
   active_routine = 0;
