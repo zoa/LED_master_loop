@@ -6,6 +6,8 @@
 #include "Audio_monitor.h"
 #include "Routine_switcher.h"
 
+//////// Set mode ///////
+#define chiton_mode 0 // 0 is seed pods, 1 is chitons
 
 //////// Globals //////////
 
@@ -26,7 +28,7 @@ void (*update)(); // pointer to current led-updating function within this sketch
 void (Zoa_WS2801::* library_update)(rgbInfo_t); 
 
 // Set the first variable to the NUMBER of pixels. 25 = 25 pixels in a row
-Zoa_WS2801 strip = Zoa_WS2801(stripLen, dataPin, clockPin, WS2801_GRB);
+Zoa_WS2801 strip = Zoa_WS2801(stripLen, dataPin, clockPin, chiton_mode ? WS2801_GRB : WS2801_RGB );
 
 // Pointers to some waveform objects - currently they're reallocated each time the routine changes
 #define WAVES 6
@@ -61,7 +63,10 @@ void setup()
   strip.begin();
   strip.setAll(rgbInfo_t(0,0,0));
   
-  switch_after = 240000;
+  // the patterns were switching way too fast on the seed pods - can't fully test it now so 
+  // arbitrarily multiplying it for now
+  switch_after = 240000 * 5; 
+  
   interrupt_counter = switch_after + 1;
   prev_interrupt_counter = interrupt_counter;
   active_routine = 0;
@@ -81,7 +86,7 @@ void setup()
 
 void loop()
 {  
-  if ( audio.is_anomolously_loud() )
+  if ( audio.is_anomolously_loud() && chiton_mode )
   {
     do_startle_routine();
   }
@@ -188,7 +193,14 @@ void loop()
           waves[2] = new Sine_generator( 10, 200, 2 );
       }
       active_routine = i;
-      interrupt_counter -= switch_after;
+      if ( interrupt_counter > switch_after )
+      {
+        interrupt_counter -= switch_after;
+      }
+      else
+      {
+        interrupt_counter = 0;
+      }
       linear_transition(500);
     }
   }
