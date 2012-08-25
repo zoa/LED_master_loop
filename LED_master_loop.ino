@@ -28,7 +28,7 @@ void (*update)(); // pointer to current led-updating function within this sketch
 void (Zoa_WS2801::* library_update)(rgbInfo_t); 
 
 // Set the first variable to the NUMBER of pixels. 25 = 25 pixels in a row
-Zoa_WS2801 strip = Zoa_WS2801(stripLen, dataPin, clockPin, chiton_mode ? WS2801_GRB : WS2801_RGB );
+Zoa_WS2801 strip = Zoa_WS2801(stripLen, dataPin, clockPin, chiton_mode ? WS2801_RGB : WS2801_GRB );
 
 // Pointers to some waveform objects - currently they're reallocated each time the routine changes
 #define WAVES 6
@@ -63,9 +63,7 @@ void setup()
   strip.begin();
   strip.setAll(rgbInfo_t(0,0,0));
   
-  // the patterns were switching way too fast on the seed pods - can't fully test it now so 
-  // arbitrarily multiplying it for now
-  switch_after = 240000 * 5; 
+  switch_after = 180000; 
   
   interrupt_counter = switch_after + 1;
   prev_interrupt_counter = interrupt_counter;
