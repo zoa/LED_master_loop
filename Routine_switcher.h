@@ -1,3 +1,6 @@
+#ifndef ROUTINE_SWITCHER_H
+#define ROUTINE_SWITCHER_H
+
 // We need to move through the routines in a fixed but variable-looking order
 // so that each arduino stays in sync. This encapsulates the order to keep it out
 // of the main file.
@@ -56,3 +59,6 @@ private:
   signed char cnt;
   signed char dir;
 };
+
+
+#endif
